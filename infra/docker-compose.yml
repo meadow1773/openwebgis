@@ -1,0 +1,69 @@
+# infra/docker-compose.yml
+
+services:
+  #--------------------------------------------------------------------------
+  # PostgreSQL Database Service
+  #--------------------------------------------------------------------------
+  postgres:
+    image: postgres:16
+    container_name: openwebgis-postgres
+    restart: on-failure
+    environment:
+      - POSTGRES_USER=test
+      - POSTGRES_PASSWORD=test
+      - POSTGRES_DB=test
+    volumes:
+      # Use a named volume for data persistence
+      - ./postgres:/var/lib/postgresql/data
+    ports:
+      # Exposes the database on http://localhost:5432
+      - "5432:5432"
+    healthcheck:
+      # Command to check if the database is ready for connections
+      test: [ "CMD-SHELL", "pg_isready -U test -d test" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - openwebgis-network
+
+  #--------------------------------------------------------------------------
+  # API Service (NestJS)
+  #--------------------------------------------------------------------------
+  api:
+    container_name: openwebgis-api
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile.dev
+    working_dir: /usr/src/app
+    volumes:
+      # Mounts the source code for hot-reloading
+      - ../apps/api:/usr/src/app
+      # Anonymizes the node_modules directory to use the container's version
+      - /usr/src/app/node_modules
+    ports:
+      # Exposes the API on http://localhost:3000
+      - "3000:3000"
+    environment:
+      # Database connection URL for Prisma/TypeORM etc.
+      - DATABASE_URL=postgresql://test:test@postgres:5432/test?schema=public
+    depends_on:
+      postgres:
+        # Waits for the database to be healthy before starting the API
+        condition: service_healthy
+    networks:
+      - openwebgis-network
+
+#------------------------------------------------------------------------------
+# Volumes
+#------------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    name: openwebgis-postgres-data
+
+#------------------------------------------------------------------------------
+# Networks
+#------------------------------------------------------------------------------
+networks:
+  openwebgis-network:
+    driver: bridge
