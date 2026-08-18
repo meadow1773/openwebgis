@@ -4,6 +4,7 @@
   "description": "Open WebGIS",
   "type": "module",
   "scripts": {
+    "install": "npm install --prefix ./apps/api && npm install --prefix ./apps/web",
     "start": "node start.js full",
     "start:api": "node start.js api",
     "start:web": "node start.js web",
