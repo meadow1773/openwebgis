@@ -6,64 +6,78 @@ services:
   #--------------------------------------------------------------------------
   postgres:
     image: postgres:16
-    container_name: openwebgis-postgres
+    container_name: owg-postgres
     restart: on-failure
     environment:
       - POSTGRES_USER=test
       - POSTGRES_PASSWORD=test
-      - POSTGRES_DB=test
+      - POSTGRES_DB=owg_core_db
     volumes:
-      # Use a named volume for data persistence
-      - ./postgres:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     ports:
-      # Exposes the database on http://localhost:5432
       - "5432:5432"
     healthcheck:
-      # Command to check if the database is ready for connections
-      test: [ "CMD-SHELL", "pg_isready -U test -d test" ]
+      test: [ "CMD-SHELL", "pg_isready -U test -d owg_core_db" ]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
-      - openwebgis-network
+      - owg-network
+
+  #--------------------------------------------------------------------------
+  # Flyway Database Migration Service - Core
+  #--------------------------------------------------------------------------
+  flyway-core:
+    image: flyway/flyway:latest
+    container_name: owg-flyway-core
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./postgres/core/migrations:/flyway/sql
+    command:
+      - -url=jdbc:postgresql://postgres:5432/owg_core_db
+      - -user=test
+      - -password=test
+      - -connectRetries=60
+      - migrate
+    networks:
+      - owg-network
 
   #--------------------------------------------------------------------------
   # API Service (NestJS)
   #--------------------------------------------------------------------------
   api:
-    container_name: openwebgis-api
+    container_name: owg-api
     build:
       context: ../apps/api
       dockerfile: Dockerfile.dev
     working_dir: /usr/src/app
     volumes:
-      # Mounts the source code for hot-reloading
       - ../apps/api:/usr/src/app
-      # Anonymizes the node_modules directory to use the container's version
       - /usr/src/app/node_modules
     ports:
-      # Exposes the API on http://localhost:3000
       - "3000:3000"
     environment:
-      # Database connection URL for Prisma/TypeORM etc.
-      - DATABASE_URL=postgresql://test:test@postgres:5432/test?schema=public
+      - DATABASE_URL=postgresql://test:test@postgres:5432/owg_core_db?schema=public
     depends_on:
       postgres:
-        # Waits for the database to be healthy before starting the API
         condition: service_healthy
+      flyway-core:
+        condition: service_completed_successfully
     networks:
-      - openwebgis-network
+      - owg-network
 
 #------------------------------------------------------------------------------
 # Volumes
 #------------------------------------------------------------------------------
 volumes:
   postgres_data:
-    name: openwebgis-postgres-data
+    name: owg-postgres-data
 
 #------------------------------------------------------------------------------
 # Networks
 #------------------------------------------------------------------------------
 networks:
-  openwebgis-network:
+  owg-network:
     driver: bridge
